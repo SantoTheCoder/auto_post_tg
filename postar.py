@@ -113,13 +113,61 @@ def converter_webp_para_png(caminho_imagem):
 # -----------------------------------------------------------------------------
 # Função principal para postar a mensagem com a imagem ou vídeo
 # -----------------------------------------------------------------------------
-async def postar_mensagem(config, posts, midias):
-    # Adicionar variação aleatória de minutos (se > 0 e se modo teste não estiver ativo)
-    # (Opcional manter a variação mesmo no teste, mas aqui mantemos como no fluxo normal)
-    if config['variation_minutes'] > 0 and not config['test_mode']:
-        delay = random.randint(0, config['variation_minutes'])
-        print(f"Aguardando {delay} minutos para enviar o post.")
-        await asyncio.sleep(delay * 60)  # Converter minutos para segundos
+class SelecionadorAleatorio:
+    def __init__(self, itens):
+        self.itens = itens.copy()
+        random.shuffle(self.itens)
+
+    def proximo(self):
+        if not self.itens:
+            # Reembaralha quando todos os itens já foram usados
+            self.itens = self.itens_original.copy()
+            random.shuffle(self.itens)
+        return self.itens.pop()
+
+    def reset(self):
+        self.itens = self.itens_original.copy()
+        random.shuffle(self.itens)
+
+    def set_itens(self, novos_itens):
+        self.itens = novos_itens.copy()
+        random.shuffle(self.itens)
+
+
+async def postar_mensagem(config, posts_selecionados, midias_selecionadas):
+    # Inicializar os selecionadores aleatórios se ainda não existirem
+    if not hasattr(postar_mensagem, "selecionador_posts"):
+        postar_mensagem.selecionador_posts = SelecionadorAleatorio(posts_selecionados)
+    if not hasattr(postar_mensagem, "selecionador_midias"):
+        postar_mensagem.selecionador_midias = SelecionadorAleatorio(midias_selecionadas)
+
+    # Selecionar um post e uma mídia aleatoriamente
+    post_selecionado = postar_mensagem.selecionador_posts.proximo()
+    midia_selecionada = postar_mensagem.selecionador_midias.proximo()
+
+    print(f"Post selecionado: {post_selecionado[:50]}...")  # Mostra os primeiros 50 caracteres
+    print(f"Mídia selecionada: {midia_selecionada}")
+
+    # Verificar o comprimento do post
+    if len(post_selecionado) > 1024:
+        enviar_com_midia = False
+        print("O post excede 1024 caracteres. Será enviado sem a imagem.")
+    else:
+        enviar_com_midia = True
+
+    extensao = os.path.splitext(midia_selecionada)[1].lower()
+
+    # Se for .webp, converter para .png
+    if enviar_com_midia and extensao == '.webp':
+        midia_para_enviar = converter_webp_para_png(midia_selecionada)
+        if not midia_para_enviar:
+            print("Erro: Não foi possível converter a imagem .webp.")
+            midia_para_enviar = None
+            enviar_com_midia = False
+    elif enviar_com_midia:
+        midia_para_enviar = midia_selecionada
+    else:
+        midia_para_enviar = None
 
     # Inicializar o cliente Telethon
     client = TelegramClient('session_name', config['api_id'], config['api_hash'])
@@ -143,38 +191,26 @@ async def postar_mensagem(config, posts, midias):
         await client.disconnect()
         return
 
-    # Selecionar um post e uma mídia aleatoriamente
-    post_selecionado = random.choice(posts)
-    midia_selecionada = random.choice(midias)
-
-    print(f"Post selecionado: {post_selecionado}")
-    print(f"Mídia selecionada: {midia_selecionada}")
-
-    extensao = os.path.splitext(midia_selecionada)[1].lower()
-
-    # Se for .webp, converter para .png
-    if extensao == '.webp':
-        midia_para_enviar = converter_webp_para_png(midia_selecionada)
-        if not midia_para_enviar:
-            print("Erro: Não foi possível converter a imagem .webp.")
-            await client.disconnect()
-            return
-    else:
-        midia_para_enviar = midia_selecionada
-
-    # Enviar a mensagem (imagem ou vídeo) com a legenda
+    # Enviar a mensagem (imagem ou vídeo) com a legenda ou apenas texto
     try:
-        await client.send_file(
-            config['target_id'],
-            midia_para_enviar,
-            caption=post_selecionado  # Envia apenas o conteúdo do post
-        )
-        print("Mensagem enviada com sucesso!")
+        if enviar_com_midia and midia_para_enviar:
+            await client.send_file(
+                config['target_id'],
+                midia_para_enviar,
+                caption=post_selecionado  # Envia o conteúdo do post como legenda
+            )
+            print("Mensagem com mídia enviada com sucesso!")
+        else:
+            await client.send_message(
+                config['target_id'],
+                post_selecionado
+            )
+            print("Mensagem de texto enviada com sucesso!")
     except Exception as e:
         print(f"Erro ao enviar mensagem: {e}")
     finally:
         # Se a imagem foi convertida, remover o arquivo temporário
-        if extensao == '.webp' and midia_para_enviar:
+        if enviar_com_midia and extensao == '.webp' and midia_para_enviar:
             try:
                 os.remove(midia_para_enviar)
             except Exception as e:
