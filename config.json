@@ -1,8 +1,8 @@
 {
-    "api_id": 21321780,               
-    "api_hash": "f388258e6b4ed69515ce83043a0ba441", 
-    "target_id": -1002273446487,    
-    "posts_per_day": 1,             
-    "scheduled_times": ["08:34"],
-    "variation_minutes": 0    
+    "api_id": 21321780,
+    "api_hash": "f388258e6b4ed69515ce83043a0ba441",
+    "target_id": -1002273446487,
+    "posts_per_day": 8,
+    "scheduled_times": ["09:05", "09:06", "09:07", "09:08", "09:09", "09:10", "09:11", "09:12"],
+    "variation_minutes": 0
 }
