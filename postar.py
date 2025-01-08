@@ -8,12 +8,12 @@ from telethon.errors import SessionPasswordNeededError
 from PIL import Image
 import tempfile
 
-# Função para carregar configurações
+# Função para carregar configurações do arquivo config.json
 def carregar_config(config_path='config.json'):
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
-            # Converter target_id para inteiro
+            # Converter target_id para inteiro (sem aspas)
             config['target_id'] = int(config['target_id'])
             return config
     except FileNotFoundError:
@@ -26,7 +26,7 @@ def carregar_config(config_path='config.json'):
         print(f"Erro: 'target_id' deve ser um número inteiro.")
         exit(1)
 
-# Função para ler e parsear os posts do arquivo
+# Função para ler e parsear os posts do arquivo posts.txt
 def carregar_posts(posts_path='posts.txt'):
     try:
         with open(posts_path, 'r', encoding='utf-8') as f:
@@ -39,7 +39,7 @@ def carregar_posts(posts_path='posts.txt'):
         print(f"Erro: O arquivo {posts_path} não foi encontrado.")
         exit(1)
 
-# Função para listar as imagens na pasta
+# Função para listar as imagens na pasta 'imagens' com as extensões válidas
 def listar_imagens(pasta='imagens'):
     extensoes_validas = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg', '.heic')
     try:
@@ -52,7 +52,7 @@ def listar_imagens(pasta='imagens'):
         print(f"Erro: A pasta '{pasta}' não foi encontrada.")
         exit(1)
 
-# Função para converter .webp para .png
+# Função para converter imagens .webp para .png
 def converter_webp_para_png(caminho_imagem):
     try:
         with Image.open(caminho_imagem) as img:
@@ -64,7 +64,7 @@ def converter_webp_para_png(caminho_imagem):
         print(f"Erro ao converter {caminho_imagem} para PNG: {e}")
         return None
 
-# Função principal para postar
+# Função principal para postar a mensagem com a imagem
 async def postar_mensagem(config, posts, imagens):
     # Inicializar o cliente Telethon
     client = TelegramClient('session_name', config['api_id'], config['api_hash'])
@@ -76,7 +76,7 @@ async def postar_mensagem(config, posts, imagens):
         print(f"Erro ao iniciar o cliente Telethon: {e}")
         return
 
-    # Verificar se a entidade existe
+    # Verificar se a entidade (grupo ou canal) existe e está acessível
     try:
         entity = await client.get_entity(config['target_id'])
         entity_name = entity.title if hasattr(entity, 'title') else (entity.username if hasattr(entity, 'username') else 'Nome Desconhecido')
@@ -104,7 +104,7 @@ async def postar_mensagem(config, posts, imagens):
     else:
         imagem_para_enviar = imagem_selecionada
 
-    # Enviar a mensagem com a imagem sem os marcadores
+    # Enviar a mensagem com a imagem sem os marcadores -- INICIO e -- FIM
     try:
         await client.send_file(
             config['target_id'],
@@ -123,6 +123,7 @@ async def postar_mensagem(config, posts, imagens):
                 print(f"Erro ao remover arquivo temporário: {e}")
         await client.disconnect()
 
+# Função principal que coordena o fluxo do programa
 def main():
     config = carregar_config()
     posts = carregar_posts()
@@ -138,5 +139,6 @@ def main():
 
     asyncio.run(postar_mensagem(config, posts, imagens))
 
+# Ponto de entrada do script
 if __name__ == '__main__':
     main()
