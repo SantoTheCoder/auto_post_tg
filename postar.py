@@ -7,6 +7,9 @@ from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 from PIL import Image
 import tempfile
+from datetime import datetime, timedelta
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 # Função para carregar configurações do arquivo config.json
 def carregar_config(config_path='config.json'):
@@ -15,6 +18,18 @@ def carregar_config(config_path='config.json'):
             config = json.load(f)
             # Converter target_id para inteiro (sem aspas)
             config['target_id'] = int(config['target_id'])
+            # Verificar se 'scheduled_times' é uma lista
+            if not isinstance(config.get('scheduled_times', []), list):
+                print("Erro: 'scheduled_times' deve ser uma lista de horários no formato 'HH:MM'.")
+                exit(1)
+            # Verificar se 'posts_per_day' corresponde ao número de 'scheduled_times'
+            if config.get('posts_per_day') != len(config.get('scheduled_times', [])):
+                print("Erro: 'posts_per_day' deve corresponder ao número de horários em 'scheduled_times'.")
+                exit(1)
+            # Verificar se 'variation_minutes' é um inteiro
+            if not isinstance(config.get('variation_minutes'), int):
+                print("Erro: 'variation_minutes' deve ser um número inteiro.")
+                exit(1)
             return config
     except FileNotFoundError:
         print(f"Erro: O arquivo {config_path} não foi encontrado.")
@@ -66,6 +81,12 @@ def converter_webp_para_png(caminho_imagem):
 
 # Função principal para postar a mensagem com a imagem
 async def postar_mensagem(config, posts, imagens):
+    # Adicionar variação aleatória
+    if config['variation_minutes'] > 0:
+        delay = random.randint(0, config['variation_minutes'])
+        print(f"Aguardando {delay} minutos para enviar o post.")
+        await asyncio.sleep(delay * 60)  # Converter minutos para segundos
+
     # Inicializar o cliente Telethon
     client = TelegramClient('session_name', config['api_id'], config['api_hash'])
 
@@ -123,6 +144,44 @@ async def postar_mensagem(config, posts, imagens):
                 print(f"Erro ao remover arquivo temporário: {e}")
         await client.disconnect()
 
+# Função para agendar os posts
+def agendar_posts(config, posts, imagens):
+    scheduler = AsyncIOScheduler()
+
+    def parse_time(time_str):
+        """Converte uma string de horário 'HH:MM' para hora e minuto inteiros."""
+        try:
+            hora, minuto = map(int, time_str.split(':'))
+            return hora, minuto
+        except ValueError:
+            print(f"Erro: Horário '{time_str}' está no formato inválido. Use 'HH:MM'.")
+            exit(1)
+
+    async def job_wrapper():
+        await postar_mensagem(config, posts, imagens)
+
+    for scheduled_time in config['scheduled_times']:
+        hora, minuto = parse_time(scheduled_time)
+        # Define o trigger cron para cada horário
+        trigger = CronTrigger(hour=hora, minute=minuto)
+        # Adiciona o job ao scheduler
+        scheduler.add_job(
+            job_wrapper,
+            trigger=trigger,
+            name=f"Post diário às {scheduled_time}"
+        )
+        print(f"Agendado: Post diário às {scheduled_time} com variação de {config['variation_minutes']} minutos.")
+
+    # Iniciar o scheduler
+    scheduler.start()
+    print("Scheduler iniciado e funcionando.")
+
+    # Manter o loop rodando
+    try:
+        asyncio.get_event_loop().run_forever()
+    except (KeyboardInterrupt, SystemExit):
+        pass
+
 # Função principal que coordena o fluxo do programa
 def main():
     config = carregar_config()
@@ -137,7 +196,7 @@ def main():
         print("Erro: Nenhuma imagem encontrada na pasta 'imagens'.")
         return
 
-    asyncio.run(postar_mensagem(config, posts, imagens))
+    agendar_posts(config, posts, imagens)
 
 # Ponto de entrada do script
 if __name__ == '__main__':
