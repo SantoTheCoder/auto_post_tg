@@ -104,12 +104,12 @@ async def postar_mensagem(config, posts, imagens):
     else:
         imagem_para_enviar = imagem_selecionada
 
-    # Enviar a mensagem com a imagem
+    # Enviar a mensagem com a imagem sem os marcadores
     try:
         await client.send_file(
             config['target_id'],
             imagem_para_enviar,
-            caption=f"-- INICIO\n{post_selecionado}\n-- FIM"
+            caption=post_selecionado  # Envia apenas o conteúdo do post
         )
         print("Mensagem enviada com sucesso!")
     except Exception as e:
