@@ -111,11 +111,12 @@ def converter_webp_para_png(caminho_imagem):
 
 
 # -----------------------------------------------------------------------------
-# Função principal para postar a mensagem com a imagem ou vídeo
+# Classe para selecionar itens aleatoriamente e ciclar indefinidamente
 # -----------------------------------------------------------------------------
 class SelecionadorAleatorio:
     def __init__(self, itens):
-        self.itens = itens.copy()
+        self.itens_original = itens.copy()
+        self.itens = self.itens_original.copy()
         random.shuffle(self.itens)
 
     def proximo(self):
@@ -130,10 +131,14 @@ class SelecionadorAleatorio:
         random.shuffle(self.itens)
 
     def set_itens(self, novos_itens):
-        self.itens = novos_itens.copy()
+        self.itens_original = novos_itens.copy()
+        self.itens = self.itens_original.copy()
         random.shuffle(self.itens)
 
 
+# -----------------------------------------------------------------------------
+# Função principal para postar a mensagem com a imagem ou vídeo
+# -----------------------------------------------------------------------------
 async def postar_mensagem(config, posts_selecionados, midias_selecionadas):
     # Inicializar os selecionadores aleatórios se ainda não existirem
     if not hasattr(postar_mensagem, "selecionador_posts"):
@@ -288,13 +293,10 @@ def main():
     # Se test_mode estiver ativo, executa o modo de teste
     if config.get('test_mode', False):
         print("Modo de teste ativado. Enviaremos posts a cada 10 segundos, indefinidamente.")
-        loop = asyncio.get_event_loop()
         try:
-            loop.run_until_complete(modo_teste(config, posts, midias))
+            asyncio.run(modo_teste(config, posts, midias))
         except (KeyboardInterrupt, SystemExit):
-            pass
-        finally:
-            loop.close()
+            print("Bot interrompido pelo usuário.")
     else:
         # Caso contrário, segue a lógica de agendamento
         agendar_posts(config, posts, midias)
