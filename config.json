@@ -3,6 +3,7 @@
     "api_hash": "f388258e6b4ed69515ce83043a0ba441",
     "target_id": -1002273446487,
     "posts_per_day": 4,
-    "scheduled_times": ["09:56", "09:57", "09:58", "09:59"],
-    "variation_minutes": 0
+    "scheduled_times": ["09:00", "12:00", "15:00", "18:00"],
+    "variation_minutes": 0,
+    "test_mode": true
 }

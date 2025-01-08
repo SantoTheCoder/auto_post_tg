@@ -1,4 +1,4 @@
-#postar.py
+# postar.py
 
 import json
 import os
@@ -13,26 +13,37 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+# -----------------------------------------------------------------------------
 # Função para carregar configurações do arquivo config.json
+# -----------------------------------------------------------------------------
 def carregar_config(config_path='config.json'):
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
             # Converter target_id para inteiro (sem aspas)
             config['target_id'] = int(config['target_id'])
+
             # Verificar se 'scheduled_times' é uma lista
             if not isinstance(config.get('scheduled_times', []), list):
                 print("Erro: 'scheduled_times' deve ser uma lista de horários no formato 'HH:MM'.")
                 exit(1)
+
             # Verificar se 'posts_per_day' corresponde ao número de 'scheduled_times'
             if config.get('posts_per_day') != len(config.get('scheduled_times', [])):
                 print("Erro: 'posts_per_day' deve corresponder ao número de horários em 'scheduled_times'.")
                 exit(1)
+
             # Verificar se 'variation_minutes' é um inteiro
             if not isinstance(config.get('variation_minutes'), int):
                 print("Erro: 'variation_minutes' deve ser um número inteiro.")
                 exit(1)
+
+            # Se test_mode não existir no JSON, definimos como False por padrão
+            if 'test_mode' not in config:
+                config['test_mode'] = False
+
             return config
+
     except FileNotFoundError:
         print(f"Erro: O arquivo {config_path} não foi encontrado.")
         exit(1)
@@ -43,7 +54,10 @@ def carregar_config(config_path='config.json'):
         print(f"Erro: 'target_id' deve ser um número inteiro.")
         exit(1)
 
+
+# -----------------------------------------------------------------------------
 # Função para ler e parsear os posts do arquivo posts.txt
+# -----------------------------------------------------------------------------
 def carregar_posts(posts_path='posts.txt'):
     try:
         with open(posts_path, 'r', encoding='utf-8') as f:
@@ -56,20 +70,34 @@ def carregar_posts(posts_path='posts.txt'):
         print(f"Erro: O arquivo {posts_path} não foi encontrado.")
         exit(1)
 
-# Função para listar as imagens na pasta 'imagens' com as extensões válidas
+
+# -----------------------------------------------------------------------------
+# Função para listar mídias (imagens e vídeos) na pasta 'imagens'
+# -----------------------------------------------------------------------------
 def listar_imagens(pasta='imagens'):
-    extensoes_validas = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg', '.heic')
+    # Agora incluindo também vídeos .mp4 como mídia válida
+    extensoes_validas = (
+        '.jpg', '.jpeg', '.png', '.gif', '.bmp', 
+        '.webp', '.tiff', '.svg', '.heic', '.mp4'
+    )
     try:
-        imagens = [os.path.join(pasta, img) for img in os.listdir(pasta) if img.lower().endswith(extensoes_validas)]
-        if not imagens:
-            print(f"Erro: Nenhuma imagem válida encontrada na pasta '{pasta}'.")
+        arquivos = [
+            os.path.join(pasta, nome)
+            for nome in os.listdir(pasta)
+            if nome.lower().endswith(extensoes_validas)
+        ]
+        if not arquivos:
+            print(f"Erro: Nenhum arquivo de mídia válido encontrado na pasta '{pasta}'.")
             exit(1)
-        return imagens
+        return arquivos
     except FileNotFoundError:
         print(f"Erro: A pasta '{pasta}' não foi encontrada.")
         exit(1)
 
+
+# -----------------------------------------------------------------------------
 # Função para converter imagens .webp para .png
+# -----------------------------------------------------------------------------
 def converter_webp_para_png(caminho_imagem):
     try:
         with Image.open(caminho_imagem) as img:
@@ -81,10 +109,14 @@ def converter_webp_para_png(caminho_imagem):
         print(f"Erro ao converter {caminho_imagem} para PNG: {e}")
         return None
 
-# Função principal para postar a mensagem com a imagem
-async def postar_mensagem(config, posts, imagens):
-    # Adicionar variação aleatória
-    if config['variation_minutes'] > 0:
+
+# -----------------------------------------------------------------------------
+# Função principal para postar a mensagem com a imagem ou vídeo
+# -----------------------------------------------------------------------------
+async def postar_mensagem(config, posts, midias):
+    # Adicionar variação aleatória de minutos (se > 0 e se modo teste não estiver ativo)
+    # (Opcional manter a variação mesmo no teste, mas aqui mantemos como no fluxo normal)
+    if config['variation_minutes'] > 0 and not config['test_mode']:
         delay = random.randint(0, config['variation_minutes'])
         print(f"Aguardando {delay} minutos para enviar o post.")
         await asyncio.sleep(delay * 60)  # Converter minutos para segundos
@@ -102,36 +134,39 @@ async def postar_mensagem(config, posts, imagens):
     # Verificar se a entidade (grupo ou canal) existe e está acessível
     try:
         entity = await client.get_entity(config['target_id'])
-        entity_name = entity.title if hasattr(entity, 'title') else (entity.username if hasattr(entity, 'username') else 'Nome Desconhecido')
+        entity_name = (entity.title if hasattr(entity, 'title') 
+                       else (entity.username if hasattr(entity, 'username') 
+                             else 'Nome Desconhecido'))
         print(f"Entidade encontrada: {entity_name}")
     except Exception as e:
         print(f"Erro ao encontrar a entidade: {e}")
         await client.disconnect()
         return
 
-    # Selecionar um post e uma imagem aleatoriamente
+    # Selecionar um post e uma mídia aleatoriamente
     post_selecionado = random.choice(posts)
-    imagem_selecionada = random.choice(imagens)
+    midia_selecionada = random.choice(midias)
 
     print(f"Post selecionado: {post_selecionado}")
-    print(f"Imagem selecionada: {imagem_selecionada}")
+    print(f"Mídia selecionada: {midia_selecionada}")
 
-    # Verificar se a imagem é .webp e converter se necessário
-    extensao = os.path.splitext(imagem_selecionada)[1].lower()
+    extensao = os.path.splitext(midia_selecionada)[1].lower()
+
+    # Se for .webp, converter para .png
     if extensao == '.webp':
-        imagem_para_enviar = converter_webp_para_png(imagem_selecionada)
-        if not imagem_para_enviar:
+        midia_para_enviar = converter_webp_para_png(midia_selecionada)
+        if not midia_para_enviar:
             print("Erro: Não foi possível converter a imagem .webp.")
             await client.disconnect()
             return
     else:
-        imagem_para_enviar = imagem_selecionada
+        midia_para_enviar = midia_selecionada
 
-    # Enviar a mensagem com a imagem sem os marcadores -- INICIO e -- FIM
+    # Enviar a mensagem (imagem ou vídeo) com a legenda
     try:
         await client.send_file(
             config['target_id'],
-            imagem_para_enviar,
+            midia_para_enviar,
             caption=post_selecionado  # Envia apenas o conteúdo do post
         )
         print("Mensagem enviada com sucesso!")
@@ -139,15 +174,18 @@ async def postar_mensagem(config, posts, imagens):
         print(f"Erro ao enviar mensagem: {e}")
     finally:
         # Se a imagem foi convertida, remover o arquivo temporário
-        if extensao == '.webp' and imagem_para_enviar:
+        if extensao == '.webp' and midia_para_enviar:
             try:
-                os.remove(imagem_para_enviar)
+                os.remove(midia_para_enviar)
             except Exception as e:
                 print(f"Erro ao remover arquivo temporário: {e}")
         await client.disconnect()
 
-# Função para agendar os posts
-def agendar_posts(config, posts, imagens):
+
+# -----------------------------------------------------------------------------
+# Função para agendar os posts com base em horários específicos
+# -----------------------------------------------------------------------------
+def agendar_posts(config, posts, midias):
     scheduler = AsyncIOScheduler()
 
     def parse_time(time_str):
@@ -160,7 +198,7 @@ def agendar_posts(config, posts, imagens):
             exit(1)
 
     async def job_wrapper():
-        await postar_mensagem(config, posts, imagens)
+        await postar_mensagem(config, posts, midias)
 
     for scheduled_time in config['scheduled_times']:
         hora, minuto = parse_time(scheduled_time)
@@ -184,22 +222,50 @@ def agendar_posts(config, posts, imagens):
     except (KeyboardInterrupt, SystemExit):
         pass
 
+
+# -----------------------------------------------------------------------------
+# Função para modo de teste: enviar posts a cada 10 segundos
+# -----------------------------------------------------------------------------
+async def modo_teste(config, posts, midias):
+    while True:
+        await postar_mensagem(config, posts, midias)
+        # Intervalo de 10 segundos entre cada post no modo de teste
+        await asyncio.sleep(10)
+
+
+# -----------------------------------------------------------------------------
 # Função principal que coordena o fluxo do programa
+# -----------------------------------------------------------------------------
 def main():
     config = carregar_config()
     posts = carregar_posts()
-    imagens = listar_imagens()
+    midias = listar_imagens()
 
     if not posts:
         print("Erro: Nenhum post encontrado no arquivo posts.txt.")
         return
 
-    if not imagens:
-        print("Erro: Nenhuma imagem encontrada na pasta 'imagens'.")
+    if not midias:
+        print("Erro: Nenhuma mídia (imagem/vídeo) encontrada na pasta 'imagens'.")
         return
 
-    agendar_posts(config, posts, imagens)
+    # Se test_mode estiver ativo, executa o modo de teste
+    if config.get('test_mode', False):
+        print("Modo de teste ativado. Enviaremos posts a cada 10 segundos, indefinidamente.")
+        loop = asyncio.get_event_loop()
+        try:
+            loop.run_until_complete(modo_teste(config, posts, midias))
+        except (KeyboardInterrupt, SystemExit):
+            pass
+        finally:
+            loop.close()
+    else:
+        # Caso contrário, segue a lógica de agendamento
+        agendar_posts(config, posts, midias)
 
+
+# -----------------------------------------------------------------------------
 # Ponto de entrada do script
+# -----------------------------------------------------------------------------
 if __name__ == '__main__':
     main()
