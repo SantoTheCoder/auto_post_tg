@@ -13,6 +13,28 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+# ----------------------------------------------------------------------------- 
+# NOVO: Definir um arquivo de estado para gravar em disco quais itens já foram usados
+# -----------------------------------------------------------------------------
+STATE_FILE = 'state.json'
+
+def load_state():
+    """Carrega o estado do ciclo (quais posts e mídias ainda faltam) do arquivo STATE_FILE."""
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            # Se houver qualquer problema para carregar, retorna estado vazio
+            return {}
+    else:
+        return {}
+
+def save_state(state):
+    """Salva o estado atual no arquivo STATE_FILE."""
+    with open(STATE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(state, f, ensure_ascii=False, indent=4)
+
 # -----------------------------------------------------------------------------
 # Função para carregar configurações do arquivo config.json
 # -----------------------------------------------------------------------------
@@ -111,29 +133,68 @@ def converter_webp_para_png(caminho_imagem):
 
 
 # -----------------------------------------------------------------------------
-# Classe para selecionar itens aleatoriamente e ciclar indefinidamente
+# Classe para selecionar itens aleatoriamente e ciclar indefinidamente,
+# sem repetir até completar o ciclo, e com persistência de estado.
 # -----------------------------------------------------------------------------
 class SelecionadorAleatorio:
-    def __init__(self, itens):
+    def __init__(self, itens, state_key):
+        """
+        :param itens: Lista completa de itens (posts ou mídias).
+        :param state_key: String para diferenciar o estado ('posts' ou 'midias').
+        """
+        self.state_key = state_key
         self.itens_original = itens.copy()
-        self.itens = self.itens_original.copy()
-        random.shuffle(self.itens)
+        
+        # Carrega o estado
+        self.state = load_state()
+        
+        # Se não existir algo no estado para essa key, cria um novo shuffle
+        if self.state_key not in self.state:
+            # Gera um novo ciclo e salva
+            random.shuffle(self.itens_original)
+            self.state[self.state_key] = self.itens_original.copy()
+            save_state(self.state)
+        
+        # Aqui usamos a lista do estado como "itens atuais"
+        self.itens = self.state[self.state_key].copy()
 
     def proximo(self):
+        """
+        Retorna o próximo item sem repetir até esgotar o ciclo.
+        Quando esgota, inicia novo shuffle.
+        """
+        # Se não houver mais itens no estado (ciclo acabou), reinicia
         if not self.itens:
-            # Reembaralha quando todos os itens já foram usados
+            random.shuffle(self.itens_original)
             self.itens = self.itens_original.copy()
-            random.shuffle(self.itens)
-        return self.itens.pop()
+            # Atualiza o estado
+            self.state[self.state_key] = self.itens
+            save_state(self.state)
+
+        # Pega o último item
+        item = self.itens.pop()
+        # Atualiza a lista no estado com o item removido
+        self.state[self.state_key] = self.itens
+        save_state(self.state)
+
+        return item
 
     def reset(self):
+        """Se quiser reiniciar completamente o ciclo (não é obrigatório usar)."""
+        random.shuffle(self.itens_original)
         self.itens = self.itens_original.copy()
-        random.shuffle(self.itens)
+        self.state[self.state_key] = self.itens
+        save_state(self.state)
 
     def set_itens(self, novos_itens):
+        """
+        Se quiser trocar a lista original por uma nova (não é obrigatório usar).
+        """
         self.itens_original = novos_itens.copy()
+        random.shuffle(self.itens_original)
         self.itens = self.itens_original.copy()
-        random.shuffle(self.itens)
+        self.state[self.state_key] = self.itens
+        save_state(self.state)
 
 
 # -----------------------------------------------------------------------------
@@ -141,12 +202,13 @@ class SelecionadorAleatorio:
 # -----------------------------------------------------------------------------
 async def postar_mensagem(config, posts_selecionados, midias_selecionadas):
     # Inicializar os selecionadores aleatórios se ainda não existirem
+    # ** Repare que passamos a key 'posts' ou 'midias' para persistir corretamente. **
     if not hasattr(postar_mensagem, "selecionador_posts"):
-        postar_mensagem.selecionador_posts = SelecionadorAleatorio(posts_selecionados)
+        postar_mensagem.selecionador_posts = SelecionadorAleatorio(posts_selecionados, 'posts')
     if not hasattr(postar_mensagem, "selecionador_midias"):
-        postar_mensagem.selecionador_midias = SelecionadorAleatorio(midias_selecionadas)
+        postar_mensagem.selecionador_midias = SelecionadorAleatorio(midias_selecionadas, 'midias')
 
-    # Selecionar um post e uma mídia aleatoriamente
+    # Selecionar um post e uma mídia aleatoriamente (sem repetir até ciclo fechar)
     post_selecionado = postar_mensagem.selecionador_posts.proximo()
     midia_selecionada = postar_mensagem.selecionador_midias.proximo()
 
