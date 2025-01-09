@@ -1,0 +1,9 @@
+{
+    "api_id": 24392168,
+    "api_hash": "34c148d354808f2eb78a490560d02637",
+    "target_id": -1002358854504,
+    "posts_per_day": 1,
+    "scheduled_times": ["02:00"],
+    "variation_minutes": 120,
+    "test_mode": false
+}
