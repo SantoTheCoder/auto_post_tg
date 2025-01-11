@@ -1,5 +1,3 @@
-# postar.py
-
 import json
 import os
 import random
@@ -13,7 +11,7 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-# ----------------------------------------------------------------------------- 
+# -----------------------------------------------------------------------------
 # NOVO: Definir um arquivo de estado para gravar em disco quais itens já foram usados
 # -----------------------------------------------------------------------------
 STATE_FILE = 'state.json'
@@ -122,6 +120,7 @@ def listar_imagens(pasta='imagens'):
 # -----------------------------------------------------------------------------
 def converter_webp_para_png(caminho_imagem):
     try:
+        from PIL import Image
         with Image.open(caminho_imagem) as img:
             # Cria um arquivo temporário para salvar a imagem convertida
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
@@ -150,7 +149,6 @@ class SelecionadorAleatorio:
         
         # Se não existir algo no estado para essa key, cria um novo shuffle
         if self.state_key not in self.state:
-            # Gera um novo ciclo e salva
             random.shuffle(self.itens_original)
             self.state[self.state_key] = self.itens_original.copy()
             save_state(self.state)
@@ -286,7 +284,8 @@ async def postar_mensagem(config, posts_selecionados, midias_selecionadas):
 
 
 # -----------------------------------------------------------------------------
-# Função para agendar os posts com base em horários específicos
+# Função para agendar os posts com base em horários específicos,
+# agora com a variação para mais ou para menos.
 # -----------------------------------------------------------------------------
 def agendar_posts(config, posts, midias):
     scheduler = AsyncIOScheduler()
@@ -300,20 +299,69 @@ def agendar_posts(config, posts, midias):
             print(f"Erro: Horário '{time_str}' está no formato inválido. Use 'HH:MM'.")
             exit(1)
 
-    async def job_wrapper():
+    # Wrapper que será chamado no horário mais cedo (caso a variação seja negativa)
+    # ou exatamente no horário (se a variação não puder antecipar a meia-noite),
+    # e então fará o 'sleep' de forma aleatória para produzir a variação.
+    async def job_wrapper(hora_programada, minuto_programado):
+        # Valor total em minutos do horário programado
+        total_scheduled_minutes = hora_programada * 60 + minuto_programado
+
+        # Define o intervalo de variação (tanto para mais quanto para menos).
+        # Exemplo: variation_minutes = 120 -> pode variar até 120 min antes ou depois.
+        # Mas, se cair antes de 00:00, limitamos a 00:00 na agenda, e compensamos no sleep.
+        # Ou seja, no final, sempre será "horário real" entre [hora_programada - var, hora_programada + var].
+        variation = config['variation_minutes']
+
+        # Cálculo para determinar em que horário (minutos) iremos realmente agendar o job (o mais cedo possível).
+        # Se o horário agendado - variation for menor que 0 (passaria de meia-noite),
+        # clipamos para zero. Assim, no CronTrigger, agendamos o "mais cedo" possível.
+        earliest_minutes = total_scheduled_minutes - variation
+        if earliest_minutes < 0:
+            earliest_minutes = 0
+
+        # Agora, no momento em que o job dispara (earliest_minutes),
+        # vamos fazer um sleep aleatório de 0 até (variation * 2) minutos.
+        # Assim, a janela final vai de (hora_programada - variation) até (hora_programada + variation).
+        max_delay = variation * 2
+        random_delay = random.randint(0, max_delay)
+
+        print(f"[DEBUG] Horário agendado originalmente: {hora_programada:02d}:{minuto_programado:02d}")
+        print(f"[DEBUG] Post agendado para mais cedo às (minutos absolutos): {earliest_minutes}")
+        print(f"[DEBUG] Variação máxima em minutos: ±{variation}")
+        print(f"[DEBUG] Delay sorteado (0 até {max_delay}): {random_delay} minutos")
+
+        # Aguarda o delay sorteado para efetivamente postar
+        await asyncio.sleep(random_delay * 60)
+
+        # Finalmente, chama a função que posta
         await postar_mensagem(config, posts, midias)
 
     for scheduled_time in config['scheduled_times']:
         hora, minuto = parse_time(scheduled_time)
-        # Define o trigger cron para cada horário
-        trigger = CronTrigger(hour=hora, minute=minuto)
-        # Adiciona o job ao scheduler
+
+        # Calcula o horário mais cedo possível, considerando a variação negativa.
+        variation = config['variation_minutes']
+        total_scheduled_minutes = hora * 60 + minuto
+        earliest_minutes = total_scheduled_minutes - variation
+        if earliest_minutes < 0:
+            earliest_minutes = 0
+
+        # Converte novamente para hora e minuto para o CronTrigger
+        hour_earliest = earliest_minutes // 60
+        minute_earliest = earliest_minutes % 60
+
+        # Usamos CronTrigger para disparar o job diário no "earliest time".
+        trigger = CronTrigger(hour=hour_earliest, minute=minute_earliest)
+
+        # Adiciona o job ao scheduler, passando como argumento o horário programado original.
         scheduler.add_job(
             job_wrapper,
             trigger=trigger,
-            name=f"Post diário às {scheduled_time}"
+            args=[hora, minuto],
+            name=f"Post diário (var. ±{variation}) - {scheduled_time}"
         )
-        print(f"Agendado: Post diário às {scheduled_time} com variação de {config['variation_minutes']} minutos.")
+
+        print(f"Agendado: Post diário em torno de {scheduled_time} (±{variation} min).")
 
     # Iniciar o scheduler
     scheduler.start()
