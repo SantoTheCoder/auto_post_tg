@@ -5,5 +5,7 @@
     "posts_per_day": 1,
     "scheduled_times": ["02:00"],
     "variation_minutes": 120,
-    "test_mode": false
+    "test_mode": false,
+    "postar_dias_da_semana": true,
+    "numero_de_dias_por_semana": 3
 }
