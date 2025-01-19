@@ -1,6 +1,4 @@
-#postar_cyborg.py
-
-
+# postar_cyborg.py
 import json
 import os
 import random
@@ -66,7 +64,7 @@ def carregar_config(config_path='config.json'):
                 config['test_mode'] = False
 
             # -----------------------------------------------------------------------------
-            # NOVO: Carregar e validar novas configurações para dias da semana
+            # Verificar e atribuir default para postar_dias_da_semana
             # -----------------------------------------------------------------------------
             if 'postar_dias_da_semana' in config:
                 if not isinstance(config['postar_dias_da_semana'], bool):
@@ -82,6 +80,14 @@ def carregar_config(config_path='config.json'):
             else:
                 # Definir padrão se não existir
                 config['postar_dias_da_semana'] = False
+
+            # -----------------------------------------------------------------------------
+            # "dias_exatos" (novo) é opcional. Se existir, deve ser lista de strings.
+            # -----------------------------------------------------------------------------
+            if 'dias_exatos' in config:
+                if not isinstance(config['dias_exatos'], list):
+                    print("Erro: 'dias_exatos' deve ser uma lista de strings (ex: ['terca','quinta']).")
+                    exit(1)
 
             return config
 
@@ -141,7 +147,6 @@ def listar_imagens(pasta='imagens'):
 # -----------------------------------------------------------------------------
 def converter_webp_para_png(caminho_imagem):
     try:
-        from PIL import Image
         with Image.open(caminho_imagem) as img:
             # Cria um arquivo temporário para salvar a imagem convertida
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
@@ -217,6 +222,36 @@ class SelecionadorAleatorio:
 
 
 # -----------------------------------------------------------------------------
+# Função para parsear os nomes de dias exatos em formato CronTrigger (0 a 6)
+# -----------------------------------------------------------------------------
+def parse_dias_exatos(dias_lista):
+    """
+    Converte strings como 'segunda', 'terca', 'quarta', etc. 
+    em números (0=segunda, 1=terça, ... 6=domingo).
+    Se algum dia for inválido, levanta ValueError.
+    """
+    mapping = {
+        # Você pode expandir se quiser abreviações:
+        'seg': 0, 'segunda': 0, 'segunda-feira': 0,
+        'ter': 1, 'terca': 1, 'terça': 1, 'terça-feira': 1,
+        'qua': 2, 'quarta': 2, 'quarta-feira': 2,
+        'qui': 3, 'quinta': 3, 'quinta-feira': 3,
+        'sex': 4, 'sexta': 4, 'sexta-feira': 4,
+        'sab': 5, 'sábado': 5, 'sabado': 5,
+        'dom': 6, 'domingo': 6
+    }
+    result = []
+    for dia in dias_lista:
+        dia_lower = dia.strip().lower()
+        if dia_lower in mapping:
+            result.append(mapping[dia_lower])
+        else:
+            raise ValueError(f"Dia da semana inválido no config: '{dia}'")
+    # Remover duplicados e retornar
+    return list(set(result))
+
+
+# -----------------------------------------------------------------------------
 # Função principal para postar a mensagem com a imagem ou vídeo
 # -----------------------------------------------------------------------------
 async def postar_mensagem(config, posts_selecionados, midias_selecionadas):
@@ -231,7 +266,7 @@ async def postar_mensagem(config, posts_selecionados, midias_selecionadas):
     post_selecionado = postar_mensagem.selecionador_posts.proximo()
     midia_selecionada = postar_mensagem.selecionador_midias.proximo()
 
-    print(f"Post selecionado: {post_selecionado[:50]}...")  # Mostra os primeiros 50 caracteres
+    print(f"Post selecionado: {post_selecionado[:50]}...")  # Mostra apenas os primeiros 50 caracteres
     print(f"Mídia selecionada: {midia_selecionada}")
 
     # Verificar o comprimento do post
@@ -320,17 +355,33 @@ def agendar_posts(config, posts, midias):
             print(f"Erro: Horário '{time_str}' está no formato inválido. Use 'HH:MM'.")
             exit(1)
 
-    # -----------------------------------------------------------------------------
-    # NOVO: Seleção aleatória de dias da semana se ativado
-    # -----------------------------------------------------------------------------
     postar_dias = config.get('postar_dias_da_semana', False)
+
+    # -----------------------------------------------------------------------------
+    # Se postar_dias_da_semana = True, definimos a lista de dias_selecionados
+    # -----------------------------------------------------------------------------
     if postar_dias:
-        numero_dias_semana = config.get('numero_de_dias_por_semana', 7)
-        dias_disponiveis = list(range(0,7))  # 0=Segunda, 6=Domingo
-        dias_selecionados = random.sample(dias_disponiveis, numero_dias_semana)
-        print(f"Dias selecionados para postar esta semana: {', '.join(['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'][d] for d in dias_selecionados)}")
+        # Se dias_exatos estiver definido e não for vazio, usamos ele;
+        # caso contrário, sorteamos aleatoriamente numero_de_dias_por_semana
+        dias_exatos = config.get('dias_exatos', [])
+        if dias_exatos:
+            # Converter para índices 0..6
+            try:
+                dias_selecionados = parse_dias_exatos(dias_exatos)
+            except ValueError as e:
+                print(f"Erro ao interpretar dias_exatos: {e}")
+                exit(1)
+            print(f"Dias exatos definidos no config: {dias_exatos} (índices: {dias_selecionados})")
+        else:
+            numero_dias_semana = config.get('numero_de_dias_por_semana', 7)
+            dias_disponiveis = list(range(0,7))  # 0=segunda, 6=domingo
+            dias_selecionados = random.sample(dias_disponiveis, numero_dias_semana)
+            nomes_dias = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom"]
+            print("Dias selecionados aleatoriamente para postar esta semana: " +
+                  ", ".join(nomes_dias[d] for d in dias_selecionados))
     else:
-        dias_selecionados = list(range(0,7))  # Todos os dias
+        # Se postar_dias_da_semana = False, iremos postar todos os dias (0..6)
+        dias_selecionados = list(range(0,7))
 
     # Wrapper que será chamado no horário programado
     async def job_wrapper(hora_programada, minuto_programado):
@@ -338,28 +389,20 @@ def agendar_posts(config, posts, midias):
         total_scheduled_minutes = hora_programada * 60 + minuto_programado
 
         # Define o intervalo de variação (tanto para mais quanto para menos).
-        # Exemplo: variation_minutes = 120 -> pode variar até 120 min antes ou depois.
-        # Mas, se cair antes de 00:00, limitamos a 00:00 na agenda, e compensamos no sleep.
-        # Ou seja, no final, sempre será "horário real" entre [hora_programada - var, hora_programada + var].
         variation = config['variation_minutes']
 
-        # Cálculo para determinar em que horário (minutos) iremos realmente agendar o job (o mais cedo possível).
-        # Se o horário agendado - variation for menor que 0 (passaria de meia-noite),
-        # clipamos para zero. Assim, no CronTrigger, agendamos o "mais cedo" possível.
+        # Cálculo do horário "mais cedo" possível (earliest_minutes)
         earliest_minutes = total_scheduled_minutes - variation
         if earliest_minutes < 0:
             earliest_minutes = 0
 
-        # Agora, no momento em que o job dispara (earliest_minutes),
-        # vamos fazer um sleep aleatório de 0 até (variation * 2) minutos.
-        # Assim, a janela final vai de (hora_programada - variation) até (hora_programada + variation).
+        # Quanto de atraso aleatório iremos aplicar (0 até variation*2)
         max_delay = variation * 2
         random_delay = random.randint(0, max_delay)
 
-        print(f"[DEBUG] Horário agendado originalmente: {hora_programada:02d}:{minuto_programado:02d}")
-        print(f"[DEBUG] Post agendado para mais cedo às (minutos absolutos): {earliest_minutes}")
-        print(f"[DEBUG] Variação máxima em minutos: ±{variation}")
-        print(f"[DEBUG] Delay sorteado (0 até {max_delay}): {random_delay} minutos")
+        print(f"[DEBUG] Horário base: {hora_programada:02d}:{minuto_programado:02d}")
+        print(f"[DEBUG] Horário 'earliest' (minutos absolutos): {earliest_minutes}")
+        print(f"[DEBUG] Variação ±{variation} min => delay sorteado: {random_delay} min")
 
         # Aguarda o delay sorteado para efetivamente postar
         await asyncio.sleep(random_delay * 60)
@@ -367,22 +410,19 @@ def agendar_posts(config, posts, midias):
         # Finalmente, chama a função que posta
         await postar_mensagem(config, posts, midias)
 
+    # Para cada horário em scheduled_times, cria um job no scheduler
     for scheduled_time in config['scheduled_times']:
         hora, minuto = parse_time(scheduled_time)
-
-        # Calcula o horário mais cedo possível, considerando a variação negativa.
         variation = config['variation_minutes']
         total_scheduled_minutes = hora * 60 + minuto
         earliest_minutes = total_scheduled_minutes - variation
         if earliest_minutes < 0:
             earliest_minutes = 0
-
-        # Converte novamente para hora e minuto para o CronTrigger
         hour_earliest = earliest_minutes // 60
         minute_earliest = earliest_minutes % 60
 
         if postar_dias:
-            # Agendar apenas para os dias selecionados
+            # Agendar apenas para os dias 'dias_selecionados'
             for dia in dias_selecionados:
                 trigger = CronTrigger(day_of_week=dia, hour=hour_earliest, minute=minute_earliest)
                 scheduler.add_job(
@@ -391,9 +431,9 @@ def agendar_posts(config, posts, midias):
                     args=[hora, minuto],
                     name=f"Post semanal (var. ±{variation}) - {scheduled_time} - Dia {dia}"
                 )
-                print(f"Agendado: Post em {['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'][dia]} às {scheduled_time} (±{variation} min).")
+                print(f"Agendado: Post no dia {dia} (0=Seg,...,6=Dom) às {scheduled_time} ±{variation} min.")
         else:
-            # Usamos CronTrigger para disparar o job diário no "earliest time".
+            # Usamos CronTrigger para disparar diariamente
             trigger = CronTrigger(hour=hour_earliest, minute=minute_earliest)
             scheduler.add_job(
                 job_wrapper,
@@ -405,7 +445,7 @@ def agendar_posts(config, posts, midias):
 
     # Iniciar o scheduler
     scheduler.start()
-    print("Scheduler iniciado e funcionando.")
+    print("Scheduler iniciado e funcionando. Aguarde os horários para postar...")
 
     # Manter o loop rodando
     try:

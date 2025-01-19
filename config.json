@@ -1,11 +1,12 @@
 {
-    "api_id": 24392168,
-    "api_hash": "34c148d354808f2eb78a490560d02637",
-    "target_id": -1002358854504,
+    "api_id": 21321780,
+    "api_hash": "f388258e6b4ed69515ce83043a0ba441",
+    "target_id": -1002494449327,
     "posts_per_day": 1,
-    "scheduled_times": ["02:00"],
-    "variation_minutes": 120,
+    "scheduled_times": ["16:36"],
+    "variation_minutes": 0,
     "test_mode": false,
     "postar_dias_da_semana": true,
-    "numero_de_dias_por_semana": 2
+    "numero_de_dias_por_semana": 2,
+    "dias_exatos": ["domingo", "quinta"]
 }

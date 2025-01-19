@@ -1,0 +1,9 @@
+Como funciona:
+
+    postar_dias_da_semana = true: habilita a lógica de postagem apenas em certos dias.
+    dias_exatos = ["terca","quinta"]: faz com que somente esses dias da semana sejam usados (terça=1, quinta=3).
+    Se você quiser continuar com a seleção aleatória (por exemplo, 2 dias aleatórios na semana), basta remover ou deixar vazio o campo "dias_exatos":
+
+"dias_exatos": []
+
+ou simplesmente não colocar "dias_exatos" no seu config.json. Dessa forma, o código volta a escolher dias aleatórios conforme numero_de_dias_por_semana.
