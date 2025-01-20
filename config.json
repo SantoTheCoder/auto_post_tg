@@ -1,11 +1,11 @@
 {
     "api_id": 24392168,
     "api_hash": "34c148d354808f2eb78a490560d02637",
-    "target_id": -1002358854504,
+    "target_id": -1002494449327,
     "posts_per_day": 1,
     "scheduled_times": ["01:00"],
     "variation_minutes": 120,
-    "test_mode": false,
+    "test_mode": true,
     "postar_dias_da_semana": true,
     "numero_de_dias_por_semana": 2,
     "dias_exatos": ["terça", "quinta"]
