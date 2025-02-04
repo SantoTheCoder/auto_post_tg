@@ -1,0 +1,12 @@
+{
+    "api_id": 25988393,
+    "api_hash": "f7abe67e6d725bd987726a9fc57b1df8",
+    "target_id": -1002358854504,
+    "posts_per_day": 1,
+    "scheduled_times": ["02:00"],
+    "variation_minutes": 120,
+    "test_mode": false,
+    "postar_dias_da_semana": true,
+    "numero_de_dias_por_semana": 2,
+    "dias_exatos": ["Sexta", "Segunda"]
+}
