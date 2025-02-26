@@ -8,5 +8,5 @@
     "test_mode": false,
     "postar_dias_da_semana": true,
     "numero_de_dias_por_semana": 3,
-    "dias_exatos": ["quarta", "quinta", "sabado"]
+    "dias_exatos": ["terca", "quinta", "sabado"]
 }
