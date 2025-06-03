@@ -101,27 +101,29 @@ def carregar_config(config_path='config.json'):
         print(f"Erro: 'target_id' deve ser um número inteiro.")
         exit(1)
 
-
 # -----------------------------------------------------------------------------
-# Função para ler e parsear os posts do arquivo posts.txt
+# Função para ler e parsear os posts do arquivo posts.txt, capturando o tipo
 # -----------------------------------------------------------------------------
 def carregar_posts(posts_path='posts.txt'):
     try:
         with open(posts_path, 'r', encoding='utf-8') as f:
             conteudo = f.read()
-        # Expressão regular para capturar o texto entre -- INICIO e -- FIM
-        padrao = r'-- INICIO\s*(.*?)\s*-- FIM'
-        posts = re.findall(padrao, conteudo, re.DOTALL)
-        return [post.strip() for post in posts]
+        # Expressão regular para capturar o tipo e o texto entre -- INICIO tipo e -- FIM
+        padrao = r'-- INICIO (\w+)\s*(.*?)\s*-- FIM'
+        matches = re.findall(padrao, conteudo, re.DOTALL)
+        posts = [(tipo.strip(), post.strip()) for tipo, post in matches]
+        if not posts:
+            print("Erro: Nenhum post encontrado no arquivo posts.txt.")
+            exit(1)
+        return posts
     except FileNotFoundError:
         print(f"Erro: O arquivo {posts_path} não foi encontrado.")
         exit(1)
 
-
 # -----------------------------------------------------------------------------
-# Função para listar mídias (imagens e vídeos) na pasta 'imagens'
+# Função para listar mídias (imagens e vídeos) em uma pasta específica
 # -----------------------------------------------------------------------------
-def listar_imagens(pasta='imagens'):
+def listar_imagens(pasta):
     # Agora incluindo também vídeos .mp4 como mídia válida
     extensoes_validas = (
         '.jpg', '.jpeg', '.png', '.gif', '.bmp', 
@@ -141,7 +143,6 @@ def listar_imagens(pasta='imagens'):
         print(f"Erro: A pasta '{pasta}' não foi encontrada.")
         exit(1)
 
-
 # -----------------------------------------------------------------------------
 # Função para converter imagens .webp para .png
 # -----------------------------------------------------------------------------
@@ -156,7 +157,6 @@ def converter_webp_para_png(caminho_imagem):
         print(f"Erro ao converter {caminho_imagem} para PNG: {e}")
         return None
 
-
 # -----------------------------------------------------------------------------
 # Classe para selecionar itens aleatoriamente e ciclar indefinidamente,
 # sem repetir até completar o ciclo, e com persistência de estado.
@@ -165,7 +165,7 @@ class SelecionadorAleatorio:
     def __init__(self, itens, state_key):
         """
         :param itens: Lista completa de itens (posts ou mídias).
-        :param state_key: String para diferenciar o estado ('posts' ou 'midias').
+        :param state_key: String para diferenciar o estado ('posts', 'midias_usuario', 'midias_revenda').
         """
         self.state_key = state_key
         self.itens_original = itens.copy()
@@ -220,7 +220,6 @@ class SelecionadorAleatorio:
         self.state[self.state_key] = self.itens
         save_state(self.state)
 
-
 # -----------------------------------------------------------------------------
 # Função para parsear os nomes de dias exatos em formato CronTrigger (0 a 6)
 # -----------------------------------------------------------------------------
@@ -250,23 +249,31 @@ def parse_dias_exatos(dias_lista):
     # Remover duplicados e retornar
     return list(set(result))
 
-
 # -----------------------------------------------------------------------------
-# Função principal para postar a mensagem com a imagem ou vídeo
+# Função principal para postar a mensagem com a imagem ou vídeo correspondente ao tipo
 # -----------------------------------------------------------------------------
-async def postar_mensagem(config, posts_selecionados, midias_selecionadas):
+async def postar_mensagem(config, posts, midias_usuario, midias_revenda):
     # Inicializar os selecionadores aleatórios se ainda não existirem
-    # ** Repare que passamos a key 'posts' ou 'midias' para persistir corretamente. **
     if not hasattr(postar_mensagem, "selecionador_posts"):
-        postar_mensagem.selecionador_posts = SelecionadorAleatorio(posts_selecionados, 'posts')
-    if not hasattr(postar_mensagem, "selecionador_midias"):
-        postar_mensagem.selecionador_midias = SelecionadorAleatorio(midias_selecionadas, 'midias')
+        postar_mensagem.selecionador_posts = SelecionadorAleatorio(posts, 'posts')
+    if not hasattr(postar_mensagem, "selecionador_midias_usuario"):
+        postar_mensagem.selecionador_midias_usuario = SelecionadorAleatorio(midias_usuario, 'midias_usuario')
+    if not hasattr(postar_mensagem, "selecionador_midias_revenda"):
+        postar_mensagem.selecionador_midias_revenda = SelecionadorAleatorio(midias_revenda, 'midias_revenda')
 
-    # Selecionar um post e uma mídia aleatoriamente (sem repetir até ciclo fechar)
-    post_selecionado = postar_mensagem.selecionador_posts.proximo()
-    midia_selecionada = postar_mensagem.selecionador_midias.proximo()
+    # Selecionar um post aleatoriamente (sem repetir até ciclo fechar)
+    tipo, post_selecionado = postar_mensagem.selecionador_posts.proximo()
 
-    print(f"Post selecionado: {post_selecionado[:50]}...")  # Mostra apenas os primeiros 50 caracteres
+    # Selecionar a mídia correspondente ao tipo do post
+    if tipo == 'usuario':
+        midia_selecionada = postar_mensagem.selecionador_midias_usuario.proximo()
+    elif tipo == 'revenda':
+        midia_selecionada = postar_mensagem.selecionador_midias_revenda.proximo()
+    else:
+        print(f"Tipo de post inválido: {tipo}. Pulando este post.")
+        return
+
+    print(f"Post selecionado: {post_selecionado[:50]}... (Tipo: {tipo})")
     print(f"Mídia selecionada: {midia_selecionada}")
 
     # Verificar o comprimento do post
@@ -338,12 +345,11 @@ async def postar_mensagem(config, posts_selecionados, midias_selecionadas):
                 print(f"Erro ao remover arquivo temporário: {e}")
         await client.disconnect()
 
-
 # -----------------------------------------------------------------------------
 # Função para agendar os posts com base em horários específicos,
 # agora com a variação para mais ou para menos.
 # -----------------------------------------------------------------------------
-def agendar_posts(config, posts, midias):
+def agendar_posts(config, posts, midias_usuario, midias_revenda):
     scheduler = AsyncIOScheduler()
 
     def parse_time(time_str):
@@ -408,7 +414,7 @@ def agendar_posts(config, posts, midias):
         await asyncio.sleep(random_delay * 60)
 
         # Finalmente, chama a função que posta
-        await postar_mensagem(config, posts, midias)
+        await postar_mensagem(config, posts, midias_usuario, midias_revenda)
 
     # Para cada horário em scheduled_times, cria um job no scheduler
     for scheduled_time in config['scheduled_times']:
@@ -453,16 +459,14 @@ def agendar_posts(config, posts, midias):
     except (KeyboardInterrupt, SystemExit):
         pass
 
-
 # -----------------------------------------------------------------------------
 # Função para modo de teste: enviar posts a cada 10 segundos
 # -----------------------------------------------------------------------------
-async def modo_teste(config, posts, midias):
+async def modo_teste(config, posts, midias_usuario, midias_revenda):
     while True:
-        await postar_mensagem(config, posts, midias)
+        await postar_mensagem(config, posts, midias_usuario, midias_revenda)
         # Intervalo de 10 segundos entre cada post no modo de teste
         await asyncio.sleep(10)
-
 
 # -----------------------------------------------------------------------------
 # Função principal que coordena o fluxo do programa
@@ -470,27 +474,31 @@ async def modo_teste(config, posts, midias):
 def main():
     config = carregar_config()
     posts = carregar_posts()
-    midias = listar_imagens()
+    midias_usuario = listar_imagens('imagens_usuario')
+    midias_revenda = listar_imagens('imagens_revenda')
 
     if not posts:
         print("Erro: Nenhum post encontrado no arquivo posts.txt.")
         return
 
-    if not midias:
-        print("Erro: Nenhuma mídia (imagem/vídeo) encontrada na pasta 'imagens'.")
+    if not midias_usuario:
+        print("Erro: Nenhuma mídia encontrada na pasta 'imagens_usuario'.")
+        return
+
+    if not midias_revenda:
+        print("Erro: Nenhuma mídia encontrada na pasta 'imagens_revenda'.")
         return
 
     # Se test_mode estiver ativo, executa o modo de teste
     if config.get('test_mode', False):
         print("Modo de teste ativado. Enviaremos posts a cada 10 segundos, indefinidamente.")
         try:
-            asyncio.run(modo_teste(config, posts, midias))
+            asyncio.run(modo_teste(config, posts, midias_usuario, midias_revenda))
         except (KeyboardInterrupt, SystemExit):
             print("Bot interrompido pelo usuário.")
     else:
         # Caso contrário, segue a lógica de agendamento
-        agendar_posts(config, posts, midias)
-
+        agendar_posts(config, posts, midias_usuario, midias_revenda)
 
 # -----------------------------------------------------------------------------
 # Ponto de entrada do script
