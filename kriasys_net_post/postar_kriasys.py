@@ -1,4 +1,4 @@
-# postar_cyborg.py
+# kriasys.py
 import json
 import os
 import random
@@ -277,9 +277,9 @@ async def postar_mensagem(config, posts, midias_usuario, midias_revenda):
     print(f"Mídia selecionada: {midia_selecionada}")
 
     # Verificar o comprimento do post
-    if len(post_selecionado) > 1024:
+    if len(post_selecionado) > 1300:
         enviar_com_midia = False
-        print("O post excede 1024 caracteres. Será enviado sem a imagem.")
+        print("O post excede 1300 caracteres. Será enviado sem a imagem.")
     else:
         enviar_com_midia = True
 
